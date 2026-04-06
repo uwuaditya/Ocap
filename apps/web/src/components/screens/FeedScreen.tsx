@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
+import { useUser } from "@clerk/clerk-react"
 import {
   feedScheduleLine,
   formatKmAway,
@@ -41,16 +42,6 @@ const Clock = () => (
   </svg>
 )
 
-const Verified = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
-    <circle cx="12" cy="12" r="10" fill="#1D9BF0" />
-    <path
-      d="M10.5 14.2l-2.1-2.1-.9.9 3 3 6-6-.9-.9-5.1 5.1z"
-      fill="#fff"
-    />
-  </svg>
-)
-
 function GigCardStandard({
   job,
   distanceRef,
@@ -60,7 +51,8 @@ function GigCardStandard({
 }) {
   const km = jobDistanceKm(job, distanceRef)
   const sched = feedScheduleLine(job)
-  const hirerName = job.hirer?.name ?? "Employer"
+  const hirerName = job.hirer?.name?.trim() || ""
+  if (!hirerName) return null
   return (
     <article className="rounded-ocap-feed-card border border-black/[0.06] bg-ocap-feed-card p-ocap-card">
       <div className="flex items-start justify-between gap-3">
@@ -82,17 +74,21 @@ function GigCardStandard({
         </div>
       </div>
       <div className="mt-4 flex items-center gap-3">
-        <div className="h-11 w-11 shrink-0 rounded-sm bg-zinc-300" />
+        {job.hirer?.avatar_url ? (
+          <img
+            src={job.hirer.avatar_url}
+            alt=""
+            className="h-11 w-11 shrink-0 rounded-sm object-cover"
+          />
+        ) : (
+          <div className="h-11 w-11 shrink-0 rounded-sm bg-zinc-300" />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <span className="text-[15px] font-extrabold text-ocap-black">
               {hirerName}
             </span>
-            <Verified />
           </div>
-          <p className="text-ocap-sub mt-0.5 uppercase text-ocap-feed-meta">
-            Verified employer • 4.9 rating
-          </p>
         </div>
       </div>
       <Link
@@ -114,7 +110,8 @@ function GigCardUrgent({
 }) {
   const km = jobDistanceKm(job, distanceRef)
   const sched = feedScheduleLine(job)
-  const hirerName = job.hirer?.name ?? "Employer"
+  const hirerName = job.hirer?.name?.trim() || ""
+  if (!hirerName) return null
   const fixed = isFixedRate(job)
   return (
     <article className="relative rounded-ocap-feed-card bg-ocap-feed-urgent p-ocap-card">
@@ -144,7 +141,15 @@ function GigCardUrgent({
         </div>
       </div>
       <div className="mt-4 flex items-start gap-3">
-        <div className="h-11 w-11 shrink-0 rounded-sm bg-zinc-600" />
+        {job.hirer?.avatar_url ? (
+          <img
+            src={job.hirer.avatar_url}
+            alt=""
+            className="h-11 w-11 shrink-0 rounded-sm object-cover"
+          />
+        ) : (
+          <div className="h-11 w-11 shrink-0 rounded-sm bg-zinc-600" />
+        )}
         <div className="min-w-0 flex-1">
           <span className="text-[15px] font-extrabold text-ocap-white">
             {hirerName}
@@ -175,6 +180,7 @@ type FilterType = "ALL" | "NEARBY" | "TODAY" | "₹/HR"
 
 export function FeedScreen() {
   const filters: FilterType[] = ["ALL", "NEARBY", "TODAY", "₹/HR"]
+  const { user } = useUser()
   const [allJobs, setAllJobs] = useState<JobWithHirer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -311,11 +317,19 @@ export function FeedScreen() {
             {locationLabel}
           </span>
         </div>
-        <div
-          className="h-10 w-10 shrink-0 rounded-sm"
-          style={{ background: "#FFD4B8" }}
-          aria-label="Profile"
-        />
+        {user?.imageUrl ? (
+          <img
+            src={user.imageUrl}
+            alt=""
+            className="h-10 w-10 shrink-0 rounded-sm object-cover"
+          />
+        ) : (
+          <div
+            className="h-10 w-10 shrink-0 rounded-sm"
+            style={{ background: "#FFD4B8" }}
+            aria-label="Profile"
+          />
+        )}
       </header>
 
       <div className="mt-6 px-ocap-x">

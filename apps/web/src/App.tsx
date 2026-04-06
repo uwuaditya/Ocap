@@ -10,6 +10,7 @@ import { ProtectedRoute } from "./auth/ProtectedRoute"
 import { FeedScreen } from "./components/screens/FeedScreen"
 import { HirerDashboardScreen } from "./components/screens/HirerDashboardScreen"
 import { HirerProfileScreen } from "./components/screens/HirerProfileScreen"
+import { HirerSiteLiveScreen } from "./components/screens/HirerSiteLiveScreen"
 import { JobDetailScreen } from "./components/screens/JobDetailScreen"
 import { MapScreen } from "./components/screens/MapScreen"
 import { MyJobsScreen } from "./components/screens/MyJobsScreen"
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="job/:jobId" element={<JobDetailScreen />} />
         </Route>
         <Route path="/hirer" element={<HirerDashboardScreen />} />
+        <Route path="/hirer/site/:jobId" element={<HirerSiteLiveScreen />} />
         <Route path="/hirer/profile" element={<HirerProfileScreen />} />
         <Route path="/hirer/post" element={<PostJobScreen />} />
       </Route>

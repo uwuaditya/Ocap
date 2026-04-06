@@ -1,5 +1,10 @@
 import { supabase } from "./supabase"
-import type { HirerPreview, JobWithHirer } from "../types/job"
+import type {
+  ApplicationWithJob,
+  HirerPreview,
+  JobWithHirer,
+  JobPostingRow,
+} from "../types/job"
 
 function normalizeHirer(
   hirer: HirerPreview | HirerPreview[] | null | undefined,
@@ -15,6 +20,14 @@ function normalizeJobRow(raw: Record<string, unknown>): JobWithHirer {
     ...(rest as unknown as JobWithHirer),
     hirer: normalizeHirer(h as HirerPreview | HirerPreview[] | null),
   }
+}
+
+function normalizeJob(
+  job: JobWithHirer | JobPostingRow | (JobWithHirer | JobPostingRow)[] | null | undefined,
+): JobWithHirer | null {
+  if (job == null) return null
+  if (Array.isArray(job)) return (job[0] as JobWithHirer | undefined) ?? null
+  return normalizeJobRow(job as unknown as Record<string, unknown>)
 }
 
 /**
@@ -74,4 +87,48 @@ export async function fetchJobById(id: string): Promise<{
     data: normalizeJobRow(data as Record<string, unknown>),
     error: null,
   }
+}
+
+export async function fetchWorkerApplications(workerId: string): Promise<{
+  data: ApplicationWithJob[] | null
+  error: Error | null
+}> {
+  const { data, error } = await supabase
+    .from("applications")
+    .select(
+      `
+      id,
+      worker_id,
+      job_id,
+      status,
+      created_at,
+      job:job_postings (
+        *,
+        hirer:users!hirer_id ( name, avatar_url )
+      )
+    `,
+    )
+    .eq("worker_id", workerId)
+    .order("created_at", { ascending: false })
+
+  console.log("[fetchWorkerApplications] Supabase response:", { workerId, data, error })
+
+  if (error) return { data: null, error: new Error(error.message) }
+
+  const rows = (data ?? []).map((raw) => {
+    const r = raw as unknown as Record<string, unknown>
+    const job = normalizeJob(
+      r.job as
+        | (JobWithHirer | JobPostingRow)
+        | (JobWithHirer | JobPostingRow)[]
+        | null
+        | undefined,
+    )
+    return {
+      ...(r as unknown as ApplicationWithJob),
+      job,
+    }
+  })
+
+  return { data: rows, error: null }
 }

@@ -43,6 +43,53 @@ function daysAgoLabel(iso: string): string {
   return `${d} days ago`
 }
 
+function formatStartDate(d: string | null): string {
+  if (!d) return "—"
+  try {
+    const x = new Date(`${d}T12:00:00`)
+    return x.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  } catch {
+    return d
+  }
+}
+
+function initials(name: string): string {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  const a = parts[0]?.[0] ?? ""
+  const b = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : ""
+  return (a + b).toUpperCase() || "—"
+}
+
+function statusBadge(job: JobRow): { label: string; className: string } {
+  if (job.status === "active") {
+    return { label: "ACTIVE", className: "bg-[#E2FF00] text-black" }
+  }
+  if (job.status === "filled") {
+    return { label: "FILLED", className: "bg-[#333] text-white" }
+  }
+  return {
+    label: "CLOSED",
+    className: "bg-[#1A1A1A] text-[#ff4444] border border-[#ff4444]",
+  }
+}
+
+function ratePill(job: JobRow): string {
+  if (job.is_fixed_rate && job.fixed_rate != null) {
+    return `₹${Number(job.fixed_rate).toLocaleString("en-IN")} FIXED`
+  }
+  if (job.hourly_rate != null) {
+    return `₹${Number(job.hourly_rate).toLocaleString("en-IN")}/HR`
+  }
+  return "—"
+}
+
 type JobRow = JobPostingRow
 
 export function HirerDashboardScreen() {
@@ -127,6 +174,28 @@ export function HirerDashboardScreen() {
     return { activeSites, filledSites, totalApplicants }
   }, [jobs, applicantCountByJob])
 
+  async function updateJobStatus(jobId: string, status: "active" | "closed") {
+    if (!user?.id) return
+    const res = await supabase
+      .from("job_postings")
+      .update({ status })
+      .eq("id", jobId)
+      .eq("hirer_id", user.id)
+      .select()
+
+    console.log("[HirerDashboard] job_postings status update:", {
+      jobId,
+      status,
+      data: res.data,
+      error: res.error,
+    })
+
+    if (!res.error) {
+      void loadDashboard(user.id)
+      setExpandedJobId((prev) => (prev === jobId ? null : prev))
+    }
+  }
+
   async function fetchApplicantsForJob(jobId: string) {
     setLoadingApplicants((m) => ({ ...m, [jobId]: true }))
     const res = await supabase
@@ -164,23 +233,6 @@ export function HirerDashboardScreen() {
     }
   }
 
-  async function closeSite(jobId: string) {
-    if (!user?.id) return
-    const res = await supabase
-      .from("job_postings")
-      .update({ status: "closed" })
-      .eq("id", jobId)
-      .eq("hirer_id", user.id)
-      .select()
-
-    console.log("[HirerDashboard] close site response:", res)
-
-    if (!res.error) {
-      void loadDashboard(user.id)
-      setExpandedJobId(null)
-    }
-  }
-
   async function setApplicationStatus(
     appId: string,
     jobId: string,
@@ -199,88 +251,97 @@ export function HirerDashboardScreen() {
     }
   }
 
-  function rateLine(job: JobRow): string {
-    if (job.is_fixed_rate && job.fixed_rate != null) {
-      return `₹${Number(job.fixed_rate).toLocaleString("en-IN")} FIXED`
-    }
-    if (job.hourly_rate != null) {
-      return `₹${Number(job.hourly_rate).toLocaleString("en-IN")}/HR`
-    }
-    return "—"
-  }
-
   const email = user?.primaryEmailAddress?.emailAddress ?? ""
 
   return (
-    <MobileShell className="bg-ocap-black">
-      <div className="flex min-h-screen flex-col bg-ocap-black text-ocap-white">
-        <header className="flex items-center justify-between border-b-2 border-ocap-lime-feed px-ocap-x py-4">
-          <span className="text-[18px] font-black uppercase tracking-tight text-ocap-lime-feed">
+    <MobileShell className="bg-black">
+      <div className="flex min-h-screen flex-col bg-black text-white">
+        {/* TOPBAR */}
+        <header className="flex items-center justify-between px-6 py-4">
+          <span
+            className="text-[#E2FF00]"
+            style={{ fontSize: "20px", fontWeight: 900, letterSpacing: "2px" }}
+          >
             OCAP
           </span>
-          <div className="flex min-w-0 flex-1 flex-col items-end gap-2 pl-4 sm:flex-row sm:items-center sm:justify-end">
-            <span className="max-w-[200px] truncate text-ocap-meta text-white/70 sm:max-w-none">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="max-w-[170px] truncate text-[11px] text-[#444]">
               {email}
             </span>
             <Link
               to="/hirer/profile"
-              className="shrink-0 border border-ocap-lime-feed bg-transparent px-3 py-2 text-center text-ocap-nav font-extrabold uppercase text-ocap-lime-feed"
+              className="shrink-0 rounded border border-[#1A1A1A] px-3 py-2 text-[10px] font-extrabold uppercase text-white"
+              style={{ letterSpacing: "1px" }}
             >
               Profile
             </Link>
             <button
               type="button"
               onClick={() => signOut({ redirectUrl: "/login" })}
-              className="shrink-0 border border-ocap-lime-feed bg-transparent px-3 py-2 text-ocap-nav font-extrabold uppercase text-ocap-lime-feed"
+              className="shrink-0 rounded border border-[#E2FF00] px-3 py-2 text-[10px] font-extrabold uppercase text-[#E2FF00]"
+              style={{ letterSpacing: "1px" }}
             >
               Sign out
             </button>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 gap-3 px-ocap-x py-6 sm:grid-cols-3">
-          {(
-            [
-              { label: "ACTIVE SITES", value: stats.activeSites },
-              { label: "TOTAL APPLICANTS", value: stats.totalApplicants },
-              { label: "FILLED SITES", value: stats.filledSites },
-            ] as const
-          ).map((s) => (
-            <div
-              key={s.label}
-              className="rounded-ocap-post bg-ocap-feed-urgent px-ocap-card py-4 text-center"
-            >
-              <div className="text-ocap-price-lg text-ocap-lime-feed">{s.value}</div>
-              <div className="text-ocap-meta mt-1 font-extrabold uppercase text-white/80">
-                {s.label}
+        {/* STATS ROW */}
+        <section className="px-6">
+          <div className="grid grid-cols-3 overflow-hidden rounded bg-[#0a0a0a]">
+            {(
+              [
+                { label: "ACTIVE SITES", value: stats.activeSites },
+                { label: "TOTAL APPLICANTS", value: stats.totalApplicants },
+                { label: "SITES FILLED", value: stats.filledSites },
+              ] as const
+            ).map((s, idx) => (
+              <div
+                key={s.label}
+                className="px-3 py-4 text-center"
+                style={{ borderRight: idx < 2 ? "1px solid #1A1A1A" : undefined }}
+              >
+                <div className="text-[#E2FF00]" style={{ fontSize: "28px", fontWeight: 900 }}>
+                  {s.value}
+                </div>
+                <div
+                  className="mt-1 text-[#444]"
+                  style={{ fontSize: "9px", fontWeight: 800, letterSpacing: "1px" }}
+                >
+                  {s.label}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </section>
 
-        <div className="px-ocap-x pb-8">
-          <h2 className="text-ocap-card-title font-black uppercase text-ocap-white">
-            <span className="border-b-2 border-ocap-lime-feed pb-1">MY JOB SITES</span>
+        {/* SECTION HEADER */}
+        <section className="mt-6 flex items-center justify-between px-6">
+          <h2
+            className="text-white"
+            style={{ fontSize: "12px", fontWeight: 800, letterSpacing: "2px" }}
+          >
+            <span className="inline-block border-b-2 border-[#E2FF00] pb-1">
+              MY JOB SITES
+            </span>
           </h2>
-
           <Link
             to="/hirer/post"
-            className="mt-6 block w-full bg-ocap-lime-feed py-4 text-center text-ocap-btn uppercase text-ocap-black shadow-ocap-post-btn"
+            className="rounded bg-[#E2FF00] px-3 py-2 text-[11px] font-extrabold uppercase text-black"
+            style={{ letterSpacing: "1px" }}
           >
-            POST NEW JOB SITE
+            + Post new job site
           </Link>
+        </section>
 
-          {loadError && (
-            <p className="mt-4 text-[13px] font-semibold text-red-400">{loadError}</p>
-          )}
+        <section className="px-6 pb-10 pt-4">
+          {loadError ? (
+            <p className="mt-2 text-[13px] font-semibold text-[#ff4444]">{loadError}</p>
+          ) : null}
 
           {loading ? (
             <div className="mt-10 flex justify-center">
-              <svg
-                className="h-8 w-8 animate-spin text-ocap-lime-feed"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
+              <svg className="h-8 w-8 animate-spin text-[#E2FF00]" viewBox="0 0 24 24" fill="none">
                 <circle
                   cx="12"
                   cy="12"
@@ -298,162 +359,315 @@ export function HirerDashboardScreen() {
               </svg>
             </div>
           ) : jobs.length === 0 ? (
-            <div className="mt-12 text-center">
-              <p className="text-ocap-card-title font-bold uppercase text-ocap-post-label">
+            <div className="mx-auto mt-10 max-w-[420px] text-center" style={{ padding: "40px 0" }}>
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                className="mx-auto"
+                aria-hidden
+              >
+                <path
+                  d="M6 9V7a6 6 0 0 1 12 0v2"
+                  stroke="#E2FF00"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M4 9h16l-1 12H5L4 9z"
+                  stroke="#E2FF00"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <p className="mt-4 text-[16px] font-extrabold text-white">
                 No job sites posted yet
               </p>
-              <p className="text-ocap-meta mt-2 text-ocap-post-label">
-                Post your first job site to find workers
+              <p className="mt-2 text-[13px] text-[#444]">
+                Post your first job to find workers
               </p>
+              <Link
+                to="/hirer/post"
+                className="mt-6 block w-full rounded bg-[#E2FF00] py-4 text-[11px] font-extrabold uppercase text-black"
+                style={{ letterSpacing: "1px" }}
+              >
+                Post your first job
+              </Link>
             </div>
           ) : (
-            <ul className="mt-8 flex flex-col gap-6">
+            <ul className="mt-2 flex flex-col gap-[10px]">
               {jobs.map((job) => {
                 const applicants = applicantCountByJob[job.id] ?? 0
                 const expanded = expandedJobId === job.id
                 const list = applicantsByJob[job.id]
                 const loadingList = loadingApplicants[job.id]
+                const acceptedCount =
+                  list?.filter((a) => a.status?.toLowerCase() === "accepted").length ?? 0
+                const hasAccepted = acceptedCount > 0
+                const acceptedWorkers =
+                  (list ?? []).filter((a) => a.status?.toLowerCase() === "accepted") ?? []
 
-                const statusUpper = job.status.toUpperCase()
-                const badgeClass =
-                  job.status === "active"
-                    ? "bg-ocap-lime-feed text-ocap-black"
-                    : job.status === "filled"
-                      ? "bg-zinc-500 text-ocap-white"
-                      : "bg-red-600 text-ocap-white"
+                const st = statusBadge(job)
+                const faded = job.status === "closed"
+                const urgentBadge = Boolean(job.is_urgent)
 
                 return (
                   <li
                     key={job.id}
-                    className="rounded-ocap-post border border-white/10 bg-ocap-feed-urgent p-ocap-card"
+                    className="rounded-[6px] border border-[#1A1A1A] bg-[#0d0d0d]"
+                    style={{ opacity: faded ? 0.6 : 1 }}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <h3 className="max-w-[220px] text-[18px] font-black uppercase leading-tight text-ocap-white">
-                        {job.title}
-                      </h3>
-                      <span
-                        className={`shrink-0 px-2 py-1 text-ocap-meta font-extrabold uppercase ${badgeClass}`}
-                      >
-                        {statusUpper}
-                      </span>
-                    </div>
+                    {/* TOP SECTION */}
+                    <div className="p-[14px]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-[15px] font-black text-white">
+                            {job.title}
+                          </h3>
+                          <div className="mt-1 text-[10px] text-[#555]">
+                            {job.personnel_count ?? "—"} workers · {job.daily_hours ?? "—"}{" "}
+                            hrs/day · {formatStartDate(job.start_date)}
+                          </div>
 
-                    <p className="text-ocap-meta mt-3 text-white/70">
-                      {job.personnel_count ?? "—"} workers • {job.daily_hours ?? "—"}{" "}
-                      hrs/day • {job.start_date ?? "—"}
-                    </p>
-                    <p className="text-ocap-btn mt-2 font-black text-ocap-lime-feed">
-                      {rateLine(job)}
-                    </p>
-                    {job.is_urgent ? (
-                      <div className="mt-2 inline-block bg-ocap-lime-feed px-2 py-0.5">
-                        <span className="text-[10px] font-extrabold uppercase text-ocap-black">
-                          URGENT
-                        </span>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-extrabold uppercase ${st.className}`}
+                              style={{ letterSpacing: "1px" }}
+                            >
+                              {st.label}
+                            </span>
+                            {urgentBadge ? (
+                              <span
+                                className="inline-flex items-center rounded border border-[#E2FF00] bg-black px-2 py-1 text-[10px] font-extrabold uppercase text-[#E2FF00]"
+                                style={{ letterSpacing: "1px" }}
+                              >
+                                URGENT
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div
+                          className={`shrink-0 rounded px-2.5 py-2 text-[11px] font-black ${
+                            faded ? "bg-[#1A1A1A] text-[#444]" : "bg-[#E2FF00] text-black"
+                          }`}
+                        >
+                          {ratePill(job)}
+                        </div>
                       </div>
-                    ) : null}
-                    <p className="text-ocap-sub mt-2 uppercase text-ocap-post-label">
-                      {applicants} applicants
-                    </p>
-
-                    <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={() => toggleApplicants(job.id)}
-                        className="flex-1 border-2 border-ocap-lime-feed bg-ocap-black py-3 text-ocap-btn uppercase text-ocap-lime-feed"
-                      >
-                        {expanded ? "HIDE APPLICANTS" : "VIEW APPLICANTS"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={job.status === "closed"}
-                        onClick={() => void closeSite(job.id)}
-                        className="flex-1 bg-zinc-600 py-3 text-ocap-btn uppercase text-ocap-white disabled:opacity-40"
-                      >
-                        CLOSE SITE
-                      </button>
                     </div>
 
+                    {/* APPLICANTS BAR */}
+                    <button
+                      type="button"
+                      onClick={() => toggleApplicants(job.id)}
+                      className="flex w-full items-center justify-between bg-[#111] px-[14px] py-2"
+                    >
+                      <div className="text-left text-[10px] font-extrabold uppercase text-[#444]">
+                        <span style={{ letterSpacing: "1px" }}>
+                          <span className="text-[#E2FF00]">{applicants}</span>{" "}
+                          applicants
+                        </span>
+                        {hasAccepted ? (
+                          <span className="text-[#E2FF00]" style={{ letterSpacing: "1px" }}>
+                            {" "}
+                            · {acceptedCount} accepted
+                          </span>
+                        ) : null}
+                      </div>
+                      <div
+                        className="text-[10px] font-extrabold uppercase text-[#444]"
+                        style={{ letterSpacing: "1px" }}
+                      >
+                        {expanded ? "▲ COLLAPSE" : "TAP TO EXPAND ↓"}
+                      </div>
+                    </button>
+
+                    {/* APPLICANTS PANEL */}
                     {expanded ? (
-                      <div className="mt-6 border-t border-white/10 pt-4">
+                      <div className="bg-[#080808] px-[14px] py-3">
                         {loadingList ? (
-                          <p className="text-ocap-meta text-ocap-post-label">
+                          <p className="text-[10px] font-extrabold uppercase text-[#444]">
                             Loading applicants…
                           </p>
                         ) : !list || list.length === 0 ? (
-                          <p className="text-ocap-meta text-ocap-post-label">
+                          <p className="text-[10px] font-extrabold uppercase text-[#444]">
                             No applicants yet
                           </p>
                         ) : (
-                          <ul className="flex flex-col gap-4">
+                          <ul className="flex flex-col gap-3">
                             {list.map((app) => {
                               const w = normalizeWorker(app.worker)
                               const name = w?.name?.trim() || "Anonymous Worker"
                               const phone = w?.phone ?? "—"
-                              const st = app.status.toLowerCase()
-                              const stClass =
-                                st === "pending"
-                                  ? "bg-yellow-500 text-ocap-black"
-                                  : st === "accepted"
-                                    ? "bg-ocap-lime-feed text-ocap-black"
-                                    : "bg-red-600 text-ocap-white"
+                              const st = app.status?.toLowerCase() ?? "pending"
+                              const badge =
+                                st === "accepted"
+                                  ? "bg-[#E2FF00] text-black"
+                                  : st === "rejected"
+                                    ? "bg-[#1A1A1A] text-[#ff4444] border border-[#ff4444]"
+                                    : "border border-[#E2FF00] text-[#E2FF00]"
 
                               return (
                                 <li
                                   key={app.id}
-                                  className="rounded border border-white/10 bg-black/30 p-3"
+                                  className="rounded border border-[#1A1A1A] bg-black/40 p-3"
                                 >
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="text-[15px] font-extrabold text-ocap-white">
-                                      {name}
-                                    </span>
-                                    <span
-                                      className={`px-2 py-0.5 text-[10px] font-extrabold uppercase ${stClass}`}
-                                    >
-                                      {app.status.toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <p className="text-ocap-meta mt-1 text-white/70">{phone}</p>
-                                  <p className="text-ocap-sub mt-1 uppercase text-ocap-post-label">
-                                    Applied {daysAgoLabel(app.created_at)}
-                                  </p>
-                                  <div className="mt-3 flex gap-2">
-                                    <button
-                                      type="button"
-                                      disabled={app.status !== "pending"}
-                                      onClick={() =>
-                                        void setApplicationStatus(
-                                          app.id,
-                                          job.id,
-                                          "accepted",
-                                        )
-                                      }
-                                      className="flex-1 bg-ocap-lime-post py-3 text-ocap-nav font-extrabold uppercase text-ocap-black disabled:opacity-40"
-                                    >
-                                      ACCEPT
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={app.status !== "pending"}
-                                      onClick={() =>
-                                        void setApplicationStatus(
-                                          app.id,
-                                          job.id,
-                                          "rejected",
-                                        )
-                                      }
-                                      className="flex-1 bg-ocap-feed-urgent py-3 text-ocap-nav font-extrabold uppercase text-red-400 disabled:opacity-40"
-                                    >
-                                      REJECT
-                                    </button>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex min-w-0 items-start gap-3">
+                                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1A1A1A] text-[11px] font-black text-[#E2FF00]">
+                                        {initials(name)}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="truncate text-[12px] font-extrabold text-white">
+                                          {name}
+                                        </div>
+                                        <div className="mt-1 text-[10px] text-[#444]">
+                                          {phone} · Applied {daysAgoLabel(app.created_at)}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {st === "pending" ? (
+                                      <div className="flex shrink-0 gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void setApplicationStatus(app.id, job.id, "accepted")
+                                          }
+                                          className="rounded bg-[#E2FF00] px-3 py-2 text-[9px] font-extrabold uppercase text-black"
+                                          style={{ letterSpacing: "1px" }}
+                                        >
+                                          ACCEPT
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void setApplicationStatus(app.id, job.id, "rejected")
+                                          }
+                                          className="rounded border border-[#ff4444] bg-[#1A1A1A] px-3 py-2 text-[9px] font-extrabold uppercase text-[#ff4444]"
+                                          style={{ letterSpacing: "1px" }}
+                                        >
+                                          REJECT
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span
+                                        className={`shrink-0 rounded px-2 py-1 text-[10px] font-extrabold uppercase ${badge}`}
+                                        style={{ letterSpacing: "1px" }}
+                                      >
+                                        {st.toUpperCase()}
+                                      </span>
+                                    )}
                                   </div>
                                 </li>
                               )
                             })}
                           </ul>
                         )}
+
+                        {/* LIVE TRACKING PANEL (placeholder) */}
+                        {hasAccepted ? (
+                          <div className="mt-4 rounded border border-[#1A1A1A] bg-[#0a0a0a] p-3">
+                            <div
+                              className="text-[10px] font-extrabold uppercase text-[#444]"
+                              style={{ letterSpacing: "1px" }}
+                            >
+                              LIVE WORKER STATUS
+                            </div>
+                            <ul className="mt-2 flex flex-col gap-2">
+                              {acceptedWorkers.slice(0, 3).map((a) => {
+                                const w = normalizeWorker(a.worker)
+                                const name = w?.name?.trim() || "Worker"
+                                return (
+                                  <li key={a.id} className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="relative flex h-2 w-2">
+                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#E2FF00] opacity-60" />
+                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-[#E2FF00]" />
+                                      </span>
+                                      <span className="text-[12px] font-extrabold text-white">
+                                        {name}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] font-extrabold uppercase text-[#E2FF00]">
+                                      ON SITE
+                                    </span>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
+
+                    {/* CARD ACTIONS */}
+                    <div className="grid grid-cols-2 gap-px bg-[#1A1A1A]">
+                      {job.status === "active" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => toggleApplicants(job.id)}
+                            className="bg-black py-3 text-[11px] font-extrabold uppercase text-[#E2FF00]"
+                            style={{ letterSpacing: "1px" }}
+                          >
+                            VIEW APPLICANTS
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const ok = window.confirm("Close this site?")
+                              if (!ok) return
+                              void updateJobStatus(job.id, "closed")
+                            }}
+                            className="bg-black py-3 text-[11px] font-extrabold uppercase text-[#ff4444]"
+                            style={{ letterSpacing: "1px" }}
+                          >
+                            CLOSE SITE
+                          </button>
+                        </>
+                      ) : job.status === "closed" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void updateJobStatus(job.id, "active")}
+                            className="bg-black py-3 text-[11px] font-extrabold uppercase text-[#444]"
+                            style={{ letterSpacing: "1px" }}
+                          >
+                            REOPEN SITE
+                          </button>
+                          <button
+                            type="button"
+                            disabled
+                            className="bg-black py-3 text-[11px] font-extrabold uppercase text-[#333] opacity-60"
+                            style={{ letterSpacing: "1px" }}
+                          >
+                            ARCHIVED
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => toggleApplicants(job.id)}
+                            className="bg-black py-3 text-[11px] font-extrabold uppercase text-[#E2FF00]"
+                            style={{ letterSpacing: "1px" }}
+                          >
+                            VIEW APPLICANTS
+                          </button>
+                          <button
+                            type="button"
+                            disabled
+                            className="bg-black py-3 text-[11px] font-extrabold uppercase text-[#333] opacity-60"
+                            style={{ letterSpacing: "1px" }}
+                          >
+                            FILLED
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </li>
                 )
               })}
@@ -462,11 +676,12 @@ export function HirerDashboardScreen() {
 
           <Link
             to="/worker/feed"
-            className="text-ocap-meta mt-10 block text-center uppercase text-ocap-post-label underline"
+            className="mt-10 block text-center text-[10px] font-extrabold uppercase text-[#444] underline"
+            style={{ letterSpacing: "1px" }}
           >
             Switch to worker app
           </Link>
-        </div>
+        </section>
       </div>
     </MobileShell>
   )

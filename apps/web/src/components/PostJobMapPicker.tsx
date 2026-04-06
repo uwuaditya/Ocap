@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   MapContainer,
   TileLayer,
@@ -8,8 +8,9 @@ import {
 } from "react-leaflet"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
+import { WORKER_REFERENCE } from "../lib/geo"
 
-const DEFAULT_CENTER: [number, number] = [28.7075, 77.1025]
+const DEFAULT_CENTER: [number, number] = [WORKER_REFERENCE.lat, WORKER_REFERENCE.lng]
 const DEFAULT_ZOOM = 13
 
 const pinIcon = L.divIcon({
@@ -40,6 +41,39 @@ function Recenter({ lat, lng }: { lat: number; lng: number }) {
   return null
 }
 
+function SetupAutoLocation({
+  hasPin,
+  onPick,
+}: {
+  hasPin: boolean
+  onPick: (lat: number, lng: number) => void
+}) {
+  const attempted = useRef(false)
+
+  useEffect(() => {
+    if (attempted.current) return
+    if (hasPin) return
+    attempted.current = true
+
+    if (!("geolocation" in navigator)) {
+      onPick(WORKER_REFERENCE.lat, WORKER_REFERENCE.lng)
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        onPick(pos.coords.latitude, pos.coords.longitude)
+      },
+      () => {
+        onPick(WORKER_REFERENCE.lat, WORKER_REFERENCE.lng)
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 },
+    )
+  }, [hasPin, onPick])
+
+  return null
+}
+
 export type PostJobMapPickerProps = {
   latStr: string
   lngStr: string
@@ -51,19 +85,38 @@ export function PostJobMapPicker({
   lngStr,
   onPick,
 }: PostJobMapPickerProps) {
-  const onMapClick = useCallback(
-    (lat: number, lng: number) => {
-      onPick(lat, lng)
-    },
-    [onPick],
-  )
-
   const { hasPin, lat, lng } = useMemo(() => {
     const la = parseFloat(latStr)
     const ln = parseFloat(lngStr)
     const ok = Number.isFinite(la) && Number.isFinite(ln)
     return { hasPin: ok, lat: la, lng: ln }
   }, [latStr, lngStr])
+
+  const [locating, setLocating] = useState(false)
+  const lastManualPickAt = useRef(0)
+
+  const onManualPick = useCallback(
+    (la: number, ln: number) => {
+      lastManualPickAt.current = Date.now()
+      onPick(la, ln)
+    },
+    [onPick],
+  )
+
+  const recenterToCurrent = useCallback(() => {
+    if (!("geolocation" in navigator)) return
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false)
+        onManualPick(pos.coords.latitude, pos.coords.longitude)
+      },
+      () => {
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 },
+    )
+  }, [onManualPick])
 
   return (
     <div className="relative z-0 h-[220px] w-full overflow-hidden rounded-ocap-post [&_.leaflet-container]:h-[220px] [&_.leaflet-container]:w-full [&_.leaflet-control-attribution]:text-[10px]">
@@ -77,16 +130,35 @@ export function PostJobMapPicker({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <MapClickHandler onPick={onMapClick} />
+        <SetupAutoLocation hasPin={hasPin} onPick={onPick} />
+        <MapClickHandler onPick={onManualPick} />
         {hasPin ? (
           <>
             <Recenter lat={lat} lng={lng} />
-            <Marker position={[lat, lng]} icon={pinIcon} />
+            <Marker
+              position={[lat, lng]}
+              icon={pinIcon}
+              draggable
+              eventHandlers={{
+                dragend: (e) => {
+                  const m = e.target as { getLatLng: () => { lat: number; lng: number } }
+                  const p = m.getLatLng()
+                  onManualPick(p.lat, p.lng)
+                },
+              }}
+            />
           </>
         ) : null}
       </MapContainer>
+      <button
+        type="button"
+        onClick={recenterToCurrent}
+        className="absolute right-2 top-2 z-[500] rounded bg-black/90 px-3 py-2 text-[10px] font-extrabold uppercase tracking-wide text-ocap-lime-post"
+      >
+        {locating ? "Locating…" : "Use my location"}
+      </button>
       <p className="pointer-events-none absolute bottom-8 left-2 right-2 z-[400] rounded bg-white/90 px-2 py-1 text-center text-[9px] font-bold uppercase tracking-wide text-neutral-700 shadow-sm">
-        Tap or click the map to place the site pin (free — OpenStreetMap)
+        Auto-detected pin • drag to adjust or tap the map to move (free — OpenStreetMap)
       </p>
     </div>
   )

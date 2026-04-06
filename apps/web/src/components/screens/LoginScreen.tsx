@@ -29,6 +29,8 @@ export function LoginScreen() {
         style={{
           color: "#888888",
           fontSize: "12px",
+          fontFamily:
+            '"Inter", -apple-system, BlinkMacSystemFont, sans-serif',
           letterSpacing: "2px",
           marginBottom: "48px",
           textTransform: "uppercase",

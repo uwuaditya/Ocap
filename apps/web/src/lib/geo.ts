@@ -52,3 +52,52 @@ export function parseGeographyPoint(
   }
   return null
 }
+
+function safeTimeParts(t: string | null | undefined): { hh: number; mm: number } | null {
+  if (!t) return null
+  const parts = t.split(":")
+  const hh = parseInt(parts[0] ?? "", 10)
+  const mm = parseInt(parts[1] ?? "", 10)
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  return { hh, mm }
+}
+
+function localDateTime(startDate: string, shiftStart: string): Date | null {
+  // startDate: YYYY-MM-DD (Supabase date)
+  const dParts = startDate.split("-").map((x) => parseInt(x, 10))
+  if (dParts.length !== 3) return null
+  const [y, m, d] = dParts
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null
+  const t = safeTimeParts(shiftStart)
+  if (!t) return null
+  return new Date(y, m - 1, d, t.hh, t.mm, 0, 0)
+}
+
+/**
+ * "Uber-style" time-to-start label for the Job Detail timer strip.
+ * Returns one of:
+ * - "2h 34m" (under 24h)
+ * - "3 DAYS" (1+ days)
+ * - "IN PROGRESS" (start time passed)
+ * - "SCHEDULE TBC" (missing date/time)
+ */
+export function getTimeUntil(
+  startDate: string | null,
+  shiftStart: string | null,
+): string {
+  if (!startDate || !shiftStart) return "SCHEDULE TBC"
+  const start = localDateTime(startDate, shiftStart)
+  if (!start) return "SCHEDULE TBC"
+
+  const diffMs = start.getTime() - Date.now()
+  if (diffMs <= 0) return "IN PROGRESS"
+
+  const diffMin = Math.round(diffMs / 60000)
+  const diffDays = Math.floor(diffMin / 1440)
+  if (diffDays >= 1) {
+    return `${diffDays} DAY${diffDays === 1 ? "" : "S"}`
+  }
+  const h = Math.floor(diffMin / 60)
+  const m = Math.max(0, diffMin % 60)
+  return `${h}h ${m}m`
+}

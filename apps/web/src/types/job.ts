@@ -44,3 +44,15 @@ export type ApplicationWithWorker = ApplicationRow & {
   /** Normalized to a single row; Supabase may return an object or one-element array. */
   worker: WorkerPreview | null
 }
+
+export type ApplicationWithJob = ApplicationRow & {
+  /** Normalized to a single row; Supabase may return an object or one-element array. */
+  job: JobWithHirer | null
+}
+
+export type WorkerLocationRow = {
+  worker_id: string
+  lat: number
+  lng: number
+  updated_at: string
+}

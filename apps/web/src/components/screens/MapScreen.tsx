@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { useUser } from "@clerk/clerk-react"
 import { useWorkerJobs } from "../../worker/WorkerJobsContext"
 import { WorkerJobsMap } from "../WorkerJobsMap"
 import type { JobWithHirer } from "../../types/job"
@@ -92,6 +93,7 @@ type LocationStatus = "pending" | "granted" | "denied" | "skipped"
 
 export function MapScreen() {
   const { jobs, loading, error, missingConfig, reload } = useWorkerJobs()
+  const { user } = useUser()
   const [userLocation, setUserLocation] = useState<{
     lat: number
     lng: number
@@ -224,7 +226,7 @@ export function MapScreen() {
     locationStatus === "granted" && userLocation ? userLocation : null
   const centerOnUser = locationStatus === "granted" && Boolean(userLocation)
   const duration = selected ? mapDurationLabel(selected.description) : "—"
-  const hirerName = selected?.hirer?.name ?? "—"
+  const hirerName = selected?.hirer?.name?.trim() || ""
   const rateMain =
     selected?.is_fixed_rate && selected.fixed_rate != null
       ? `₹${Number(selected.fixed_rate).toLocaleString("en-IN")}`
@@ -256,11 +258,19 @@ export function MapScreen() {
             List
           </Link>
         </div>
-        <div
-          className="h-10 w-10 shrink-0 border border-ocap-black"
-          aria-label="Profile"
-          style={{ background: "#14B8A6" }}
-        />
+        {user?.imageUrl ? (
+          <img
+            src={user.imageUrl}
+            alt=""
+            className="h-10 w-10 shrink-0 rounded-sm border border-ocap-black object-cover"
+          />
+        ) : (
+          <div
+            className="h-10 w-10 shrink-0 border border-ocap-black"
+            aria-label="Profile"
+            style={{ background: "#14B8A6" }}
+          />
+        )}
       </header>
 
       <div className="px-ocap-x pt-1">
@@ -372,7 +382,9 @@ export function MapScreen() {
                   </h2>
                   <div className="mt-2 flex items-center gap-2 text-ocap-map-muted">
                     <BuildingIcon />
-                    <span className="text-[13px] font-semibold">{hirerName}</span>
+                    {hirerName ? (
+                      <span className="text-[13px] font-semibold">{hirerName}</span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex h-[72px] w-[72px] shrink-0 flex-col items-center justify-center border border-ocap-black bg-ocap-lime-map text-ocap-black">

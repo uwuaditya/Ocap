@@ -59,6 +59,14 @@ create table applications (
   unique (job_id, worker_id)
 );
 
+-- Worker live location (for hirer tracking screen)
+create table worker_locations (
+  worker_id text primary key references users(id),
+  lat double precision not null,
+  lng double precision not null,
+  updated_at timestamptz default now()
+);
+
 -- If you enable RLS on `applications`, add e.g.:
 --   CREATE POLICY "workers insert own application" ON applications FOR INSERT
 --     WITH CHECK (worker_id = auth.uid()::text);

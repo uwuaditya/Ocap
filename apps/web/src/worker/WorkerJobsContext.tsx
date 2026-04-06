@@ -13,7 +13,7 @@ import {
 } from "react"
 import { fetchActiveJobs } from "../lib/jobs"
 import type { JobWithHirer } from "../types/job"
-import { isSupabaseConfigured } from "../lib/supabase"
+import { isSupabaseConfigured, supabase } from "../lib/supabase"
 
 type WorkerJobsState = {
   jobs: JobWithHirer[]
@@ -48,6 +48,25 @@ export function WorkerJobsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void load()
+  }, [load])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+
+    const channel = supabase
+      .channel("worker-jobs-job_postings")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "job_postings" },
+        () => {
+          void load()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
   }, [load])
 
   const value = useMemo(

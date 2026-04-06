@@ -1,53 +1,86 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { useUser } from "@clerk/clerk-react"
 import { fetchJobById } from "../../lib/jobs"
 import {
-  feedScheduleLine,
-  formatKmAway,
   isFixedRate,
-  jobDistanceKm,
-  rateBadgeText,
 } from "../../lib/jobDisplay"
 import type { ApplicationRow, JobWithHirer } from "../../types/job"
 import { isSupabaseConfigured, supabase } from "../../lib/supabase"
+import {
+  distanceKm,
+  getTimeUntil,
+  parseGeographyPoint,
+  WORKER_REFERENCE,
+} from "../../lib/geo"
 
-const Pin = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-    <path
-      d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"
-      fill="currentColor"
-    />
-  </svg>
-)
+function initials(name: string): string {
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  const a = parts[0]?.[0] ?? ""
+  const b = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : ""
+  return (a + b).toUpperCase() || "—"
+}
 
-const Cal = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-    <path
-      d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM7 11h5v5H7v-5z"
-      fill="currentColor"
-    />
-  </svg>
-)
+function cityFromAddress(address: string | null): string {
+  const a = (address ?? "").trim()
+  if (!a) return "—"
+  const parts = a
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
+  if (parts.length === 1) return parts[0]!
+  return parts[parts.length - 2] ?? parts[parts.length - 1] ?? "—"
+}
 
-const Clock = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-    <path
-      d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2z m-.01 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"
-      fill="currentColor"
-    />
-  </svg>
-)
+function Badge({
+  children,
+  variant,
+}: {
+  children: string
+  variant: "urgent" | "status"
+}) {
+  const cls =
+    variant === "urgent" ? "bg-black text-[#E2FF00]" : "bg-black text-white"
+  return (
+    <span
+      className={`${cls} inline-flex items-center px-2 py-1 text-[10px] font-extrabold uppercase`}
+      style={{ letterSpacing: "1px" }}
+    >
+      {children}
+    </span>
+  )
+}
 
-const Verified = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
-    <circle cx="12" cy="12" r="10" fill="#1D9BF0" />
-    <path
-      d="M10.5 14.2l-2.1-2.1-.9.9 3 3 6-6-.9-.9-5.1 5.1z"
-      fill="#fff"
-    />
-  </svg>
-)
+function VerifiedCheck() {
+  return (
+    <span
+      className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-black text-[#E2FF00]"
+      aria-label="Verified"
+      title="Verified"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden>
+        <path
+          d="M10.5 14.2l-2.1-2.1-.9.9 3 3 6-6-.9-.9-5.1 5.1z"
+          fill="currentColor"
+        />
+      </svg>
+    </span>
+  )
+}
+
+function NavigateIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
 
 function formatStartDate(d: string | null): string {
   if (!d) return "—"
@@ -74,39 +107,6 @@ function formatShift(t: string | null): string {
   return `${h12}:${mm.padStart(2, "0")} ${ampm}`
 }
 
-function DetailBlock({
-  label,
-  value,
-  urgent,
-}: {
-  label: string
-  value: string
-  urgent: boolean
-}) {
-  return (
-    <div
-      className={`border-b py-2.5 last:border-b-0 ${
-        urgent ? "border-white/10" : "border-black/[0.06]"
-      }`}
-    >
-      <p
-        className={`text-ocap-sub uppercase ${
-          urgent ? "text-white/55" : "text-ocap-feed-meta"
-        }`}
-      >
-        {label}
-      </p>
-      <p
-        className={`mt-1 text-[14px] font-semibold leading-snug ${
-          urgent ? "text-ocap-white" : "text-ocap-black"
-        }`}
-      >
-        {value || "—"}
-      </p>
-    </div>
-  )
-}
-
 export function JobDetailScreen() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
@@ -115,6 +115,10 @@ export function JobDetailScreen() {
   const [job, setJob] = useState<JobWithHirer | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [userLocation, setUserLocation] = useState<{
+    lat: number
+    lng: number
+  } | null>(null)
 
   const [dbRole, setDbRole] = useState<string | null>(null)
   const [existingApp, setExistingApp] = useState<ApplicationRow | null>(null)
@@ -179,11 +183,99 @@ export function JobDetailScreen() {
     void loadWorkerContext()
   }, [userLoaded, job, loadWorkerContext])
 
-  const km = job ? jobDistanceKm(job) : null
-  const sched = job ? feedScheduleLine(job) : null
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setUserLocation(WORKER_REFERENCE)
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      },
+      () => {
+        setUserLocation(WORKER_REFERENCE)
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 },
+    )
+  }, [])
+
+  useEffect(() => {
+    if (!userLoaded || !user?.id || !jobId || !isSupabaseConfigured()) return
+
+    const channel = supabase
+      .channel(`application-${jobId}-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "applications",
+          filter: `job_id=eq.${jobId}`,
+        },
+        (payload) => {
+          const row = payload.new as { worker_id?: string | null } | null
+          if (row?.worker_id !== user.id) return
+          void loadWorkerContext()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [userLoaded, user?.id, jobId, loadWorkerContext])
+
   const fixed = job ? isFixedRate(job) : false
-  const hirerName = job?.hirer?.name ?? "Employer"
+  const hirerName = job?.hirer?.name?.trim() || ""
   const urgent = Boolean(job?.is_urgent)
+  const verifiedHirer = Boolean(job?.hirer)
+
+  const jobPoint = useMemo(
+    () => (job ? parseGeographyPoint(job.location) : null),
+    [job],
+  )
+
+  const distanceLabel = useMemo(() => {
+    if (!jobPoint) return "—"
+    const ref = userLocation ?? WORKER_REFERENCE
+    const km = distanceKm(ref, jobPoint)
+    return `${km.toFixed(1)} KM AWAY`
+  }, [jobPoint, userLocation])
+
+  const timeUntil = job ? getTimeUntil(job.start_date, job.shift_start) : "—"
+
+  const subScheduleLine = useMemo(() => {
+    if (!job) return ""
+    const start = (job.start_date ?? "").trim()
+    const shift = formatShift(job.shift_start)
+    const addr = job.address?.trim() || "ADDRESS TBC"
+    if (!start || shift === "—") return `SCHEDULE TBC · ${addr}`
+    const today = new Date().toISOString().slice(0, 10)
+    const day = start === today ? "TODAY" : formatStartDate(job.start_date).toUpperCase()
+    return `${day}, ${shift.toUpperCase()} · ${addr}`
+  }, [job])
+
+  const rateText = useMemo(() => {
+    if (!job) return "—"
+    if (fixed) {
+      const v = job.fixed_rate != null ? Number(job.fixed_rate) : 0
+      return `₹${v.toLocaleString("en-IN")} FIXED`
+    }
+    const hr = job.hourly_rate != null ? Number(job.hourly_rate) : 0
+    return `₹${hr.toLocaleString("en-IN")}`
+  }, [job, fixed])
+
+  const rateLabel = fixed ? "FIXED" : "PER HOUR"
+
+  const appStatus = existingApp?.status?.toLowerCase() ?? null
+  const heroStatusBadge =
+    appStatus === "accepted"
+      ? "ACCEPTED ✓"
+      : appStatus === "pending"
+        ? "PENDING"
+        : appStatus === "rejected"
+          ? "NOT SELECTED"
+          : null
 
   const canApply =
     userLoaded &&
@@ -237,251 +329,353 @@ export function JobDetailScreen() {
         : "Not selected"
     : null
 
+  function openNavigate() {
+    if (!job) return
+    const pt = parseGeographyPoint(job.location)
+    if (pt) {
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&destination=${pt.lat},${pt.lng}`,
+        "_blank",
+      )
+      return
+    }
+    const addr = job.address?.trim()
+    if (addr) {
+      window.open(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`,
+        "_blank",
+      )
+    }
+  }
+
   return (
-    <div className="flex min-h-screen flex-col bg-ocap-feed-page px-ocap-x pb-ocap-card pt-3">
-      <header className="flex items-center justify-between">
+    <div className="min-h-screen bg-black pb-[92px]">
+      <header className="flex items-center justify-between px-6 pt-4">
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="text-[14px] font-extrabold uppercase text-ocap-black underline"
+          className="text-[10px] font-extrabold uppercase text-white"
+          style={{ letterSpacing: "1px" }}
         >
-          Back
+          ← Back
         </button>
-        <span className="text-[18px] font-black uppercase text-ocap-black">
-          Job
+        <span
+          className="text-[12px] font-black uppercase text-white"
+          style={{ letterSpacing: "1px" }}
+        >
+          Job detail
         </span>
-        <span className="w-12" />
+        <span className="w-14" />
       </header>
 
-      {loading && (
-        <p className="mt-10 text-ocap-meta uppercase text-ocap-feed-meta">
+      {loading ? (
+        <p className="px-6 pt-10 text-[10px] font-extrabold uppercase text-[#666]">
           Loading…
         </p>
-      )}
-      {error && <p className="mt-10 text-[13px] text-red-700">{error}</p>}
-      {!loading && !job && (
-        <p className="mt-10 text-ocap-meta text-ocap-feed-meta">Job not found.</p>
-      )}
-      {job && (
-        <div className="mt-6 flex flex-1 flex-col gap-4">
-          <article
-            className={`rounded-ocap-feed-card p-ocap-card ${
-              urgent
-                ? "relative bg-ocap-feed-urgent"
-                : "border border-black/[0.06] bg-ocap-feed-card"
-            }`}
-          >
-            {urgent ? (
-              <div className="absolute right-ocap-card top-ocap-card bg-ocap-lime-feed px-3 py-1">
-                <span className="text-ocap-meta font-extrabold uppercase text-ocap-black">
-                  Urgent
-                </span>
-              </div>
-            ) : null}
+      ) : null}
+      {error ? (
+        <p className="px-6 pt-10 text-[13px] font-semibold text-red-400">{error}</p>
+      ) : null}
+      {!loading && !job ? (
+        <p className="px-6 pt-10 text-[10px] font-extrabold uppercase text-[#666]">
+          Job not found.
+        </p>
+      ) : null}
 
-            <div
-              className={`flex items-start justify-between gap-3 ${urgent ? "pr-24" : ""}`}
-            >
-              <h1
-                className={`min-w-0 flex-1 text-ocap-card-title uppercase ${
-                  urgent ? "text-ocap-white" : "text-ocap-black"
-                }`}
-              >
-                {job.title}
-              </h1>
-              {!fixed && (
-                <div className="shrink-0 bg-ocap-lime-feed px-2.5 py-1.5 text-ocap-btn text-ocap-black">
-                  {rateBadgeText(job)}
-                </div>
-              )}
+      {job ? (
+        <main className="mt-4">
+          {/* 1. HERO SECTION */}
+          <section className="bg-[#E2FF00] px-6 pb-5 pt-4 text-black">
+            <div className="flex items-center gap-2">
+              {urgent ? <Badge variant="urgent">Urgent</Badge> : null}
+              {heroStatusBadge ? <Badge variant="status">{heroStatusBadge}</Badge> : null}
             </div>
 
-            <div
-              className={`mt-3 flex flex-wrap gap-6 ${
-                urgent ? "text-ocap-white" : "text-ocap-feed-meta"
-              }`}
+            <h1
+              className="mt-3 uppercase"
+              style={{
+                fontSize: "22px",
+                fontWeight: 900,
+                lineHeight: 1.1,
+              }}
             >
-              <div className="flex items-center gap-1.5">
-                <Pin />
-                <span className="text-ocap-meta uppercase">
-                  {job.address?.trim()
-                    ? job.address.trim()
-                    : formatKmAway(km)}
-                </span>
-              </div>
-              {sched ? (
-                <div className="flex items-center gap-1.5">
-                  {sched.icon === "cal" ? <Cal /> : <Clock />}
-                  <span className="text-ocap-meta uppercase">{sched.text}</span>
-                </div>
-              ) : null}
-            </div>
+              {job.title}
+            </h1>
 
-            <div className="mt-4 flex items-start gap-3">
-              {job.hirer?.avatar_url ? (
-                <img
-                  src={job.hirer.avatar_url}
-                  alt=""
-                  className="h-11 w-11 shrink-0 rounded-sm object-cover"
-                />
-              ) : (
+            <div className="mt-3 flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-black text-[#E2FF00] text-[10px] font-black">
+                {initials(hirerName || "Employer")}
+              </div>
+              <span className="text-[12px] font-extrabold">
+                {hirerName || "Employer"}
+              </span>
+              {verifiedHirer ? <VerifiedCheck /> : null}
+            </div>
+          </section>
+
+          {/* 2. TIMER STRIP */}
+          <section className="bg-black px-6 py-4">
+            <div className="flex items-stretch justify-between gap-3">
+              <div className="min-w-0">
                 <div
-                  className={`h-11 w-11 shrink-0 rounded-sm ${
-                    urgent ? "bg-zinc-600" : "bg-zinc-300"
-                  }`}
-                />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <span
-                    className={`text-[15px] font-extrabold ${
-                      urgent ? "text-ocap-white" : "text-ocap-black"
-                    }`}
-                  >
-                    {hirerName}
-                  </span>
-                  <Verified />
+                  className="text-[#666]"
+                  style={{
+                    fontSize: "10px",
+                    fontWeight: 800,
+                    letterSpacing: "1px",
+                  }}
+                >
+                  TIME UNTIL START
                 </div>
-                <p
-                  className={`text-ocap-sub mt-0.5 uppercase ${
-                    urgent ? "text-ocap-white/80" : "text-ocap-feed-meta"
-                  }`}
+                <div
+                  className="mt-1 text-[#E2FF00]"
+                  style={{ fontSize: "20px", fontWeight: 900 }}
                 >
-                  Verified employer • 4.9 rating
-                </p>
+                  {timeUntil}
+                </div>
+                <div
+                  className="mt-1 truncate text-[#666]"
+                  style={{
+                    fontSize: "10px",
+                    fontWeight: 800,
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  {subScheduleLine}
+                </div>
+              </div>
+
+              <div className="shrink-0 rounded-sm bg-[#E2FF00] px-3 py-2 text-black">
+                <div
+                  style={{
+                    fontSize: "9px",
+                    fontWeight: 800,
+                    letterSpacing: "1px",
+                  }}
+                >
+                  {rateLabel}
+                </div>
+                <div style={{ fontSize: "18px", fontWeight: 900 }}>{rateText}</div>
               </div>
             </div>
+          </section>
 
-            {fixed ? (
+          {/* 3. NAVIGATE BUTTON */}
+          <div className="px-6 pt-4">
+            <button
+              type="button"
+              onClick={openNavigate}
+              className="flex w-full items-center justify-center gap-2 bg-[#E2FF00] py-4 text-black"
+            >
+              <NavigateIcon />
+              <span
+                className="bg-black px-3 py-1 text-white"
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 800,
+                  letterSpacing: "1px",
+                }}
+              >
+                NAVIGATE TO SITE
+              </span>
+            </button>
+          </div>
+
+          {/* 4. STATS ROW */}
+          <section className="mt-4 px-6">
+            <div className="grid grid-cols-3 overflow-hidden rounded-sm">
+              {(
+                [
+                  {
+                    value:
+                      job.personnel_count != null ? String(job.personnel_count) : "—",
+                    label: "WORKERS",
+                  },
+                  {
+                    value: job.daily_hours != null ? `${job.daily_hours}h` : "—",
+                    label: "PER DAY",
+                  },
+                  {
+                    value: cityFromAddress(job.address),
+                    label: "LOCATION",
+                  },
+                ] as const
+              ).map((c, idx) => (
+                <div
+                  key={c.label}
+                  className="bg-[#0d0d0d] px-3 py-3 text-center"
+                  style={{
+                    borderRight: idx < 2 ? "1px solid #1A1A1A" : undefined,
+                  }}
+                >
+                  <div className="text-[#E2FF00] text-[16px] font-black uppercase">
+                    {c.value}
+                  </div>
+                  <div
+                    className="mt-1 text-[#666]"
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 800,
+                      letterSpacing: "1px",
+                    }}
+                  >
+                    {c.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 5. INFO ROWS */}
+          <section className="mt-4 px-6">
+            <div className="overflow-hidden rounded-sm bg-[#0a0a0a]">
+              {(
+                [
+                  { label: "FULL ADDRESS", value: job.address?.trim() || "—" },
+                  { label: "START DATE", value: formatStartDate(job.start_date) },
+                  { label: "SHIFT START", value: formatShift(job.shift_start) },
+                  { label: "DISTANCE", value: distanceLabel },
+                ] as const
+              ).map((r, idx, arr) => (
+                <div
+                  key={r.label}
+                  className="flex items-center justify-between gap-4 px-4 py-3"
+                  style={{
+                    borderBottom:
+                      idx < arr.length - 1 ? "1px solid #1A1A1A" : undefined,
+                  }}
+                >
+                  <span
+                    className="text-[#666]"
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 800,
+                      letterSpacing: "1px",
+                    }}
+                  >
+                    {r.label}
+                  </span>
+                  <span className="text-right text-[13px] font-extrabold text-white">
+                    {r.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 6. OPERATIONAL BRIEFING */}
+          <section className="mt-4 px-6">
+            <div className="rounded-sm bg-[#0a0a0a] px-4 py-4">
               <div
-                className={`mt-4 flex flex-col items-end ${
-                  urgent ? "" : ""
-                }`}
+                className="text-[#666]"
+                style={{
+                  fontSize: "10px",
+                  fontWeight: 800,
+                  letterSpacing: "1px",
+                }}
               >
-                <span
-                  className={`text-ocap-sub uppercase ${
-                    urgent ? "text-ocap-white/80" : "text-ocap-feed-meta"
-                  }`}
-                >
-                  Fixed rate
-                </span>
-                <span className="text-ocap-price-lg text-ocap-lime-feed">
-                  {rateBadgeText(job)}
-                </span>
+                OPERATIONAL BRIEFING
               </div>
-            ) : null}
-
-            <div className="mt-6">
-              <h2
-                className={`text-ocap-btn font-black uppercase ${
-                  urgent ? "text-ocap-lime-feed" : "text-ocap-black"
-                }`}
+              <p
+                className="mt-2"
+                style={{ color: "#666", fontSize: "13px", lineHeight: 1.5 }}
               >
-                Site information
-              </h2>
-              <div className="mt-2">
-                <DetailBlock
-                  urgent={urgent}
-                  label="Full address"
-                  value={job.address?.trim() ?? ""}
-                />
-                <DetailBlock
-                  urgent={urgent}
-                  label="Distance (from ref. point)"
-                  value={km != null ? `${km} km` : "—"}
-                />
-                <DetailBlock
-                  urgent={urgent}
-                  label="Workers needed"
-                  value={
-                    job.personnel_count != null
-                      ? String(job.personnel_count)
-                      : ""
-                  }
-                />
-                <DetailBlock
-                  urgent={urgent}
-                  label="Hours per day"
-                  value={
-                    job.daily_hours != null ? `${job.daily_hours} hrs` : ""
-                  }
-                />
-                <DetailBlock
-                  urgent={urgent}
-                  label="Start date"
-                  value={formatStartDate(job.start_date)}
-                />
-                <DetailBlock
-                  urgent={urgent}
-                  label="Shift start"
-                  value={formatShift(job.shift_start)}
-                />
-                <DetailBlock
-                  urgent={urgent}
-                  label="Job status"
-                  value={job.status?.toUpperCase() ?? "—"}
-                />
-                <DetailBlock
-                  urgent={urgent}
-                  label="Operational briefing"
-                  value={job.description?.trim() ?? ""}
-                />
-              </div>
+                {job.description?.trim() ? job.description.trim() : "No briefing provided"}
+              </p>
             </div>
-          </article>
+          </section>
 
           {dbRole === "hirer" ? (
-            <p className="text-center text-ocap-meta uppercase text-ocap-feed-meta">
-              You’re signed in as a hirer.{" "}
-              <Link to="/hirer" className="font-bold underline text-ocap-black">
-                Open hirer dashboard
-              </Link>
-            </p>
+            <div className="px-6 pt-4">
+              <p className="text-center text-[10px] font-extrabold uppercase text-[#666]">
+                You’re signed in as a hirer.{" "}
+                <Link to="/hirer" className="text-white underline">
+                  Open hirer dashboard
+                </Link>
+              </p>
+            </div>
           ) : null}
 
           {applyMessage ? (
-            <p
-              className={`text-center text-[13px] font-semibold ${
-                applyMessage.startsWith("Application sent")
-                  ? "text-green-700"
-                  : "text-red-700"
-              }`}
-            >
-              {applyMessage}
-            </p>
+            <div className="px-6 pt-3">
+              <p className="text-center text-[12px] font-semibold text-[#666]">
+                {applyMessage}
+              </p>
+            </div>
           ) : null}
 
           {existingApp && dbRole === "worker" ? (
-            <p className="text-center text-ocap-meta font-bold uppercase text-ocap-black">
-              {applyStatusLabel}
-            </p>
+            <div className="px-6 pt-2">
+              <p className="text-center text-[10px] font-extrabold uppercase text-[#666]">
+                {applyStatusLabel}
+              </p>
+            </div>
           ) : null}
+        </main>
+      ) : null}
 
-          {job.status !== "active" && dbRole === "worker" ? (
-            <p className="text-center text-ocap-meta uppercase text-ocap-feed-meta">
-              This job is {job.status} and is not accepting new applications.
-            </p>
-          ) : null}
-
-          {canApply ? (
-            <button
-              type="button"
-              disabled={applyBusy}
-              onClick={() => void handleApply()}
-              className="w-full bg-ocap-lime-feed py-3.5 text-ocap-btn uppercase text-ocap-black disabled:opacity-60"
-            >
-              {applyBusy ? "Applying…" : "Apply for this job"}
-            </button>
-          ) : null}
-
+      {/* 7. BOTTOM BAR */}
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t-2 border-[#E2FF00] bg-black px-6 py-4">
+        {!job ? null : dbRole === "worker" ? (
+          <>
+            {job.status !== "active" ? (
+              <button
+                type="button"
+                disabled
+                className="w-full bg-[#1A1A1A] py-4 text-center text-[13px] font-extrabold uppercase text-[#666]"
+                style={{ letterSpacing: "1px" }}
+              >
+                JOB CLOSED
+              </button>
+            ) : !existingApp ? (
+              <button
+                type="button"
+                disabled={!canApply || applyBusy}
+                onClick={() => void handleApply()}
+                className="w-full bg-[#E2FF00] py-4 text-center text-[13px] font-extrabold uppercase text-black disabled:opacity-60"
+                style={{ letterSpacing: "1px" }}
+              >
+                {applyBusy ? "REQUESTING…" : "REQUEST JOB"}
+              </button>
+            ) : existingApp.status === "pending" ? (
+              <button
+                type="button"
+                disabled
+                className="w-full bg-black py-4 text-center text-[13px] font-extrabold uppercase text-white"
+                style={{ letterSpacing: "1px" }}
+              >
+                REQUEST SENT — PENDING
+              </button>
+            ) : existingApp.status === "accepted" ? (
+              <button
+                type="button"
+                disabled
+                className="w-full border border-[#E2FF00] bg-[#1A1A1A] py-4 text-center text-[13px] font-extrabold uppercase text-[#E2FF00]"
+                style={{ letterSpacing: "1px" }}
+              >
+                ACCEPTED ✓
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full bg-black py-4 text-center text-[13px] font-extrabold uppercase text-red-400"
+                style={{ letterSpacing: "1px" }}
+              >
+                NOT SELECTED
+              </button>
+            )}
+          </>
+        ) : (
           <Link
             to="/worker/feed"
-            className="w-full border-2 border-ocap-black py-3.5 text-center text-ocap-btn uppercase text-ocap-black"
+            className="block w-full border border-white/20 py-4 text-center text-[13px] font-extrabold uppercase text-white"
+            style={{ letterSpacing: "1px" }}
           >
             Back to feed
           </Link>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
