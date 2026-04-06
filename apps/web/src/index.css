@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Native <select> / <option> ignore inherited text color in many UAs — lock to design tokens */
+@layer components {
+  .ocap-native-select {
+    color: theme("colors.ocap.black");
+    -webkit-text-fill-color: theme("colors.ocap.black");
+    background-color: transparent;
+    color-scheme: light;
+  }
+
+  .ocap-native-select option,
+  .ocap-native-select optgroup {
+    color: theme("colors.ocap.black") !important;
+    -webkit-text-fill-color: theme("colors.ocap.black") !important;
+    background-color: theme("colors.ocap.white") !important;
+  }
+
+  /* Post job light inputs: typed value stays black (incl. iOS date/time) */
+  .ocap-post-native-input {
+    color: theme("colors.ocap.black") !important;
+    -webkit-text-fill-color: theme("colors.ocap.black") !important;
+    color-scheme: light;
+  }
+
+  .leaflet-div-icon.ocap-leaflet-pin {
+    border: none;
+    background: transparent;
+  }
+
+  .leaflet-div-icon.ocap-user-loc-pin {
+    border: none;
+    background: transparent;
+  }
+
+  .ocap-map-user-pulse {
+    animation: pulse 1.5s ease-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+body {
+  font-family: Inter, system-ui, sans-serif;
+  margin: 0;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer base {
+  button {
+    min-height: 2.75rem;
+  }
+
+  button:active,
+  a:active {
+    filter: brightness(0.95);
+  }
+}
+
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    display: none;
+  }
+
+  * {
+    scrollbar-width: none;
+  }
+}

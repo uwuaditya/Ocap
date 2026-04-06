@@ -1,0 +1,8 @@
+-- Run in Supabase SQL Editor only if you created the DB with uuid-typed user ids.
+-- Prefer applying the updated schema.sql on a fresh project.
+--
+-- alter table applications drop constraint if exists applications_worker_id_fkey;
+-- alter table job_postings drop constraint if exists job_postings_hirer_id_fkey;
+-- alter table worker_profiles drop constraint if exists worker_profiles_id_fkey;
+-- alter table users alter column id type text using id::text;
+-- (then re-add FKs with text targets — exact steps depend on your current schema)

@@ -1,0 +1,12 @@
+{
+  "name": "ocap",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @ocap/web",
+    "build": "npm run build -w @ocap/web"
+  }
+}
